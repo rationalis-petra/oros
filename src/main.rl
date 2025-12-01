@@ -4,6 +4,8 @@
 ;; 
 ;; ---------------------------------------------------
 
+;;ON HOLD!
+
 (module ire
   (import
     (core :all)
@@ -103,6 +105,7 @@
 
   [let! pipeline
     hedron.create-pipeline
+      (list.list)
       vertex-binding-descriptions
       vertex-attribute-descriptions
       shaders
