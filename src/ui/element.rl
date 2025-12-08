@@ -3,6 +3,7 @@
     (core :all)
     (extra :all)
     (meta.gen :all)
+    (platform :all)  ;; TODO: when support non-all imports, update to platform.memory
 
     (data :all)
     (data.string :all)
@@ -38,7 +39,7 @@
 ;; (def build-layout macro proc [(syntax (list.List Syntax)]
   
 ;; )
-;(def )
+;; (def )
 
 (def Layout (List Element))
 
@@ -46,9 +47,9 @@
   [.data (num-to-address 0)]
   [.len 0]
   [.capacity 0]
-  [.gpa (use current-allocator)])
+  [.gpa (use memory.current-allocator)])
 
-(def container-stack dynamic (mk-list {U64} 0 0))
+;(def container-stack dynamic (mk-list {U64} 0 0))
 
 ;; (ann begin-box Proc [Style] Unit)
 ;; (def begin-box proc [style] seq
@@ -56,4 +57,4 @@
 ;;   (push (:container style 0 0) container-stack)
 ;;   )
 
-(ann end-box Proc [Style] Unit)
+;(ann end-box Proc [Style] Unit)

@@ -103,18 +103,21 @@
             [.format :float-3]
             [.offset narrow (offset-of colour Vertex) U32])]
 
+  [let! layouts (list.list)]
+
   [let! pipeline
     hedron.create-pipeline
-      (list.list)
+      layouts
       vertex-binding-descriptions
       vertex-attribute-descriptions
       shaders
       surface]
 
   (list.each hedron.destroy-shader-module shaders)
-  (free vertex-binding-descriptions.data)
-  (free vertex-attribute-descriptions.data)
-  (free shaders.data)
+  (list.free-list vertex-binding-descriptions)
+  (list.free-list vertex-attribute-descriptions)
+  (list.free-list shaders)
+  (list.free-list layouts)
   pipeline)
 
 (ann record-command Proc [hedron.CommandBuffer DrawData hedron.Surface U32] Unit)
@@ -196,10 +199,10 @@
                      [.pipeline pipeline]]
 
   (hedron.set-buffer-data vertex-buffer vertices.data)
-  (free vertices.data)
+  (list.free-list vertices)
 
   (hedron.set-buffer-data index-buffer indices.data)
-  (free indices.data)
+  (list.free-list indices)
 
   ;[let layout ]
 
@@ -216,9 +219,11 @@
   (hedron.wait-for-device)
 
   (list.each destroy-sync-acquire acquire-objects)
-  (free acquire-objects.data)
+  (list.free-list acquire-objects)
+
   (list.each destroy-sync-submit submit-objects)
-  (free submit-objects.data)
+  (list.free-list submit-objects)
+
   (hedron.destroy-buffer vertex-buffer)
   (hedron.destroy-buffer index-buffer)
   (hedron.destroy-command-pool command-pool)
