@@ -1,0 +1,7 @@
+(executable
+  (name oros)
+
+  (filename main.rl)
+  (entry-point main)
+
+  (depends ui loaders))

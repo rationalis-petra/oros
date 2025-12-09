@@ -4,9 +4,7 @@
 ;; 
 ;; ---------------------------------------------------
 
-;;ON HOLD!
-
-(module ire
+(module oros
   (import
     (core :all)
     (extra :all)

@@ -1,0 +1,4 @@
+(module 
+  (public-name loaders)
+  (file :none)
+  (submodules qoi))
