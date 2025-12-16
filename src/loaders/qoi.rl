@@ -12,4 +12,4 @@
   (export :all))
 
 
-(def load-qoi-image proc [(path String)])
+(def load-qoi-image proc [(path String)] :unit)

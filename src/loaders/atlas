@@ -1,4 +1,4 @@
-(module 
-  (public-name loaders)
+(library 
+  (name loaders)
   (file :none)
-  (submodules qoi))
+  (submodules "qoi"))
