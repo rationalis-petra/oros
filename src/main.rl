@@ -1,17 +1,25 @@
 ;; ---------------------------------------------------
 ;; 
-;;          Interactive Relic Editor (IRE)
+;;          Oros.
 ;; 
 ;; ---------------------------------------------------
 
 (module oros
   (import
+    ;; Base modules
     (core :all)
     (extra :all)
     (num :all)
     (abs.numeric :all)
+    (abs.show :all)
+
     (platform :all)
-    (data :all))
+
+    (data :all)
+
+    ;; Local modules
+    loaders
+    (loaders.qoi :only (Pixel)))
 
    (export main))
 
@@ -50,13 +58,40 @@
   sync-objects)
 
 (def load-shader proc [filename] seq
-  [let! file filesystem.open-file filename :read]
+  [let! file match (filesystem.open-file filename :read)
+               [[:ok file] file]
+               [[:error errcode] (panic "failed to open shader file")]]
   [let! chunk filesystem.read-chunk file :none]
   [let! module hedron.create-shader-module chunk]
 
   (list.free-list chunk)
   (filesystem.close-file file)
   module)
+
+(def create-font-atlas proc [command-pool] seq
+  [let! qoi-image match (loaders.qoi.load-image "resources/fonts/profont-windows.qoi" :rgba)
+                [[:ok img] img]
+                [[:error code] (panic "failed to load font")]]
+  
+  [let! staging-buffer hedron.create-buffer :transfer-source (* (size-of Pixel) qoi-image.pixels.len)]
+  (hedron.set-buffer-data staging-buffer qoi-image.pixels.data)
+  (loaders.qoi.free-image qoi-image)
+
+  [let! hd-image (hedron.create-image qoi-image.width qoi-image.height :r8-g8-b8-a8-srgb)]
+  
+  ;; Create the command buffer to push data to the image object,
+  [let! command-buffer (hedron.create-command-buffer command-pool)]
+  (hedron.command-begin command-buffer :one-time-submit) ;; one-time
+  
+  (hedron.command-end command-buffer)
+  (hedron.queue-submit command-buffer :none (list.null-list) (list.null-list))
+  (hedron.queue-wait-idle)
+  (hedron.free-command-buffer command-pool command-buffer)
+
+  ;; Cleanup
+  (hedron.destroy-buffer staging-buffer)
+
+  hd-image)
 
 (def Vec2 Struct [.x F32] [.y F32])
 (def Vec3 Struct [.x F32] [.y F32] [.z F32])
@@ -120,7 +155,7 @@
 
 (ann record-command Proc [hedron.CommandBuffer DrawData hedron.Surface U32] Unit)
 (def record-command proc [command-buffer dd surface next-image] seq
-  (hedron.command-begin command-buffer)
+  (hedron.command-begin command-buffer :none)
   (hedron.command-begin-renderpass command-buffer surface next-image)
   (hedron.command-bind-pipeline command-buffer dd.pipeline)
   (hedron.command-set-surface command-buffer surface)
@@ -150,7 +185,13 @@
           ;; The actual drawing
           (record-command acquire.command-buffer draw-data surface next-image)
             
-          (hedron.queue-submit acquire.command-buffer acquire.in-flight acquire.image-available syn.render-finished)
+          (bind [memory.current-allocator (use memory.temp-allocator)]
+            (hedron.queue-submit
+              acquire.command-buffer
+              (:some acquire.in-flight)
+              (list.list (pair.pair acquire.image-available :colour-attachment))
+              (list.list syn.render-finished)))
+
           (hedron.queue-present surface syn.render-finished next-image)]
         [:resized :unit])]))
 
@@ -174,6 +215,8 @@
   [let! acquire-objects create-acquire-objects command-pool]
   [let! num-images widen (hedron.num-swapchain-images surface) U64]
   [let! submit-objects create-sync-submit-objects num-images]
+
+  [let! font-atlas (create-font-atlas command-pool)]
 
   [let! vertices list.list
           (struct Vertex [.pos (struct Vec2 [.x -0.5]  [.y -0.5])]
@@ -202,18 +245,20 @@
   (hedron.set-buffer-data index-buffer indices.data)
   (list.free-list indices)
 
-  ;[let layout ]
+  [let! arena (allocators.make-arena (use memory.current-allocator) 16384)]
+  (bind [memory.temp-allocator (allocators.adapt-arena arena)]
+    (loop [while (bool.not (window.should-close win))]
+          [for fence-frame = 0 then (u64.mod (u64.+ fence-frame 1) 2)]
 
-  (loop [while (bool.not (window.should-close win))]
-        [for fence-frame = 0 then (u64.mod (u64.+ fence-frame 1) 2)]
-
-    (seq 
-      [let! events window.poll-events win]
-      [let! winsize new-winsize events]
-
-      (draw-frame (list.elt fence-frame acquire-objects) submit-objects draw-data surface winsize)
-      (list.free-list events)))
-
+      (seq 
+        [let! events window.poll-events win]
+        [let! winsize new-winsize events]
+        (allocators.reset-arena arena)
+    
+        (draw-frame (list.elt fence-frame acquire-objects) submit-objects draw-data surface winsize)
+        (list.free-list events))))
+  (allocators.destroy-arena arena)
+  
   (hedron.wait-for-device)
 
   (list.each destroy-sync-acquire acquire-objects)
@@ -222,6 +267,7 @@
   (list.each destroy-sync-submit submit-objects)
   (list.free-list submit-objects)
 
+  (hedron.destroy-image font-atlas)
   (hedron.destroy-buffer vertex-buffer)
   (hedron.destroy-buffer index-buffer)
   (hedron.destroy-command-pool command-pool)
