@@ -1,4 +1,5 @@
 (module qoi
+
   (import
     (core :all)
     (extra :all)
@@ -6,8 +7,11 @@
     (platform :all)  ;; TODO: when support non-all imports, update to platform.memory
     (num :all)
     (num.bool :all)
+    dev
+    debug
 
     (data :all)
+    (data.pointer :all)
     (data.result :all)
     (data.list   :only (List))
     (data.string :only (String))
@@ -61,7 +65,24 @@
 
 
 (ann rgb Proc [U8 U8 U8] Pixel)
-(def rgb proc [r b g] (struct Pixel [.r r] [.g g] [.b b] [.a 0]))
+(def rgb proc [r b g] (struct Pixel [.r r] [.g g] [.b b] [.a 255]))
+
+(ann pix-str Proc [Pixel] Unit)
+(def pix-str proc [pixel] seq
+  (terminal.write-string (u8.to-string pixel.r))
+  (terminal.write-string ", ")
+  (terminal.write-string (u8.to-string pixel.g))
+  (terminal.write-string ", ")
+  (terminal.write-string (u8.to-string pixel.b))
+  (terminal.write-string ", ")
+  (terminal.write-string (u8.to-string pixel.a))
+  (terminal.write-string "\n"))
+
+(def mk-initial-list proc [] seq
+  [let! pixels (list.mk-list {Pixel} 64 64)]
+  (loop [for i from 0 below 64]
+    (list.eset i (struct Pixel [.r 0] [.g 0] [.b 0] [.a 0]) pixels))
+  pixels)
 
 (ann load-image Proc [String ImageFormat] (Result Image LoaderError))
 (def load-image proc [path format] match (filesystem.open-file path :read)
@@ -78,6 +99,10 @@
                  (and (= qoi-header.mag4 (narrow #f U8)))))
       (panic "QOI header lacks magic bytes 'qoif'"))
 
+    ;; (terminal.write-string "channels: ")
+    ;; (terminal.write-string (to-string qoi-header.channels))
+    ;; (terminal.write-string "\n" )
+
     [let! raw-pixel-data (filesystem.read-chunk file :none)]
     ;; TODO: replace 'byte-swap' with 'to-platform-endianness'
     [let! width (u32.byte-swap qoi-header.width)]
@@ -87,9 +112,145 @@
 
     [let! pixels (list.mk-list {Pixel} num-pixels num-pixels)]
 
-    (loop [for i from 0 below num-pixels]
-      (list.eset i (rgb 100 100 100) pixels))
+    ;; See https://qoiformat.org/qoi-specification.pdf
+    ;;  for details of the qoi format.
 
+    [let! running (mk-initial-list)]
+    [let! prev-pixel (new {Pixel} (rgb 0 0 0))]
+
+    [let! src-pos (new {U64} 0)]
+    [let! runleft (new {U8} 0)]
+
+    ;; (terminal.write-string "raw-pixel-len: ")
+    ;; (terminal.write-string (to-string raw-pixel-data.len))
+    ;; (terminal.write-string "\n" )
+
+    ;; (terminal.write-string "total-pixels: ")
+    ;; (terminal.write-string (to-string num-pixels))
+    ;; (terminal.write-string "\n" )
+
+
+    (loop [for i from 0 below num-pixels]
+      (seq
+        [let! loc (get src-pos)]
+        [let! tag (list.elt loc raw-pixel-data)]
+        ;; (if (u8.= (get runleft) 0)
+        ;;   (seq
+        ;;     (terminal.write-string "tag: ")
+        ;;     (terminal.write-string (u8.to-string tag))
+        ;;     (terminal.write-string "\n"))
+        ;;   :unit)
+
+        (cond
+          [(u8.> (get runleft) 0) seq
+           (list.eset i (get prev-pixel) pixels)
+           (set runleft (- (get runleft) 1))]
+          ;; Alpha remains unchanged, all new r,g,b values
+          [(= tag #b_11111110) seq
+            [let! old-pixel (get prev-pixel)]
+            [let! new-pixel (struct (get prev-pixel)
+              [.r (list.elt (+ loc 1) raw-pixel-data)]
+              [.g (list.elt (+ loc 2) raw-pixel-data)]
+              [.b (list.elt (+ loc 3) raw-pixel-data)]
+              [.a old-pixel.a])]
+            ;; (terminal.write-string "rgb: ")
+            ;; (pix-str new-pixel)
+            (list.eset i new-pixel pixels)
+            (set prev-pixel new-pixel)
+            (set src-pos (+ loc 4))]
+          ;; All values are changed
+          [(= tag #b_11111111) seq
+            [let! new-pixel (struct Pixel
+              [.r (list.elt (+ loc 1) raw-pixel-data)]
+              [.g (list.elt (+ loc 2) raw-pixel-data)]
+              [.b (list.elt (+ loc 3) raw-pixel-data)]
+              [.a (list.elt (+ loc 4) raw-pixel-data)])]
+            ;; (terminal.write-string "rgba: ")
+            ;; (pix-str new-pixel)
+            (list.eset i new-pixel pixels)
+            (set prev-pixel new-pixel)
+            (set src-pos (+ loc 5))]
+          ;; lower 6 bits are an index into the running array
+          [(= (u8.shr 6 tag) #b_00) seq
+            ;; We know the lower 6 bits are an index into the running array, AND
+            ;; that the upper 2 bits are 0, so can just use the value!
+            [let! new-pixel (list.elt (widen tag U64) running)]
+            ;; (terminal.write-string "pix-index: " )
+            ;; (terminal.write-string (u8.to-string tag))
+            ;; (terminal.write-string " - " )
+            ;; (pix-str new-pixel)
+            (list.eset i new-pixel pixels)
+            (set prev-pixel new-pixel)
+            (set src-pos (+ loc 1))]
+          ;; rgb diff
+          ;;[(seq (debug.debug-break) (= (u8.shr 6 tag) #b_01)) seq
+          [(= (u8.shr 6 tag) #b_01) seq
+            [let! old-pixel (get prev-pixel)]
+            [let! new-pixel struct
+                [.r (+ old-pixel.r (- (u8.and #b_11 tag) 2))]
+                [.g (+ old-pixel.g (- (u8.shr 2 (u8.and #b_1100 tag)) 2))]
+                [.b (+ old-pixel.b (- (u8.shr 4 (u8.and #b_110000 tag)) 2))]
+                [.a old-pixel.a]]
+            ;; (terminal.write-string "diff: " )
+            ;; (pix-str new-pixel)
+            (list.eset i new-pixel pixels)
+            (set prev-pixel new-pixel)
+            (set src-pos (+ loc 1))]
+          ;; luma diff
+          [(= (u8.shr 6 tag) #b_10) seq
+            [let! b2 list.elt (u64.+ 1 loc) raw-pixel-data]
+            [let! old-pixel (get prev-pixel)]
+
+            [let! vg (- (u8.and tag #b_111111) 32)]
+
+            [let! new-pixel struct
+                [.r (+ old-pixel.r (u8.+ (u8.- vg 8) (u8.and (u8.shr 4 b2) #b_1111)))]
+                [.g (+ old-pixel.g vg)]
+                [.b (+ old-pixel.b (u8.+ (u8.- vg 8) (u8.and b2 #b_1111)))]
+                [.a old-pixel.a]]
+            ;; (terminal.write-string "luma: " )
+            ;; (pix-str new-pixel)
+            (list.eset i new-pixel pixels)
+            (set prev-pixel new-pixel)
+            (set src-pos (+ loc 2))
+            ;(debug.debug-break)
+            ]
+          ;; encoded as a run
+          [:true seq
+            (set runleft (u8.and tag #b_111111))
+            (set src-pos (+ loc 1))
+            (list.eset i (get prev-pixel) pixels)
+
+            ;; (terminal.write-string "run: ")
+            ;; (terminal.write-string (u8.to-string (get runleft)))
+            ;; (terminal.write-string "\n")
+
+            ]) ;* #b_00
+
+        [let! pxl (get prev-pixel)]
+
+        (if (u64.= 0 (u64.mod i (widen width U64))) (terminal.write-string "\n") :unit)
+        ;; (terminal.set-bg-colour pxl.r pxl.g pxl.b)
+        ;; (terminal.write-string " ")
+        ;; index_position = (r * 3 + g * 5 + b * 7 + a * 11) % 64
+        ;(terminal.write-string "pix:" )
+        ;;(pix-str pxl)
+        ;(debug.debug-break)
+        [let! index-pos (u8.mod (u8.+ (u8.* 3 pxl.r) (u8.+ (u8.* 5 pxl.g) (u8.+ (u8.* 7 pxl.b) (u8.* 11 pxl.a)))) 64)]
+        ;(terminal.write-string "index:" )
+        ;(terminal.write-string (u8.to-string index-pos))
+        ;(terminal.write-string "\n" )
+        (list.eset (u64.mod (widen index-pos U64) 64) pxl running)
+        ;; (if (u8.= (get runleft) 0)
+        ;;   (terminal.write-string "------------\n")
+        ;;   :unit)
+        ))
+
+    (terminal.write-string "\n")
+    (delete runleft)
+    (delete src-pos)
+    (delete prev-pixel)
+    (list.free-list running)
     (list.free-list raw-pixel-data)
     (filesystem.close-file file)
 
@@ -103,3 +264,4 @@
 
 (ann free-image Proc [Image] Unit)
 (def free-image proc [image] (list.free-list image.pixels))
+

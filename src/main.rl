@@ -68,6 +68,12 @@
   (filesystem.close-file file)
   module)
 
+(def FontAtlas Struct
+  [.image hedron.Image]
+  [.image-view hedron.ImageView]
+  [.sampler hedron.Sampler])
+
+(ann create-font-atlas Proc [hedron.CommandPool] FontAtlas)
 (def create-font-atlas proc [command-pool] seq
   [let! qoi-image match (loaders.qoi.load-image "resources/fonts/profont-windows.qoi" :rgba)
                 [[:ok img] img]
@@ -81,29 +87,92 @@
   
   ;; Create the command buffer to push data to the image object,
   [let! command-buffer (hedron.create-command-buffer command-pool)]
-  (hedron.command-begin command-buffer :one-time-submit) ;; one-time
-  
-  (hedron.command-end command-buffer)
+
+  (bind [memory.current-allocator (use memory.temp-allocator)]
+    seq
+    (hedron.command-begin command-buffer :one-time-submit) ;; one-time
+    (hedron.command-pipeline-barrier command-buffer :top-of-pipe :transfer
+      (list.list) (list.list) 
+      (list.list (struct hedron.ImageMemoryBarrier
+                   [.old-layout :undefined]
+                   [.new-layout :transfer-dest-optimal]
+                   [.source-access-mask :none]
+                   [.destination-access-mask :transfer-write]
+                   [.image hd-image])))
+    (hedron.command-copy-buffer-to-image command-buffer staging-buffer hd-image qoi-image.width qoi-image.height)
+    (hedron.command-pipeline-barrier command-buffer :transfer :fragment-shader
+      (list.list) (list.list)
+      (list.list (struct hedron.ImageMemoryBarrier
+                   [.old-layout :transfer-dest-optimal]
+                   [.new-layout :shader-read-optimal]
+                   [.source-access-mask :transfer-write]
+                   [.destination-access-mask :shader-read]
+                   [.image hd-image])))
+    
+    (hedron.command-end command-buffer))
+
+
+  ;; Final bits: submit the command and do cleanup
   (hedron.queue-submit command-buffer :none (list.null-list) (list.null-list))
   (hedron.queue-wait-idle)
   (hedron.free-command-buffer command-pool command-buffer)
-
-  ;; Cleanup
   (hedron.destroy-buffer staging-buffer)
 
-  hd-image)
+  ;; Image View
+  [let! hd-image-view (hedron.create-image-view hd-image :r8-g8-b8-a8-srgb)]
 
-(def Vec2 Struct [.x F32] [.y F32])
-(def Vec3 Struct [.x F32] [.y F32] [.z F32])
-(def Vertex Struct
-  [.pos    Vec2]
-  [.colour Vec3])
+  (struct
+    [.image hd-image]
+    [.image-view hd-image-view]
+    [.sampler (hedron.create-sampler)]))
 
-(def DrawData Struct
-  [.num-indices U32]
-  [.index-buffer hedron.Buffer]
-  [.vertex-buffer hedron.Buffer]
-  [.pipeline hedron.Pipeline])
+(ann destroy-font-atlas Proc [FontAtlas] Unit)
+(def destroy-font-atlas proc [font-atlas] seq
+  (hedron.destroy-sampler font-atlas.sampler)
+  (hedron.destroy-image-view font-atlas.image-view)
+  (hedron.destroy-image font-atlas.image))
+
+(def create-texture-layout proc [] seq
+  [let! descriptor-bindings (list.list
+          (struct hedron.DescriptorBinding
+            [.type :combined-image-sampler]
+            [.shader-stage :fragment-shader]))]
+  [let! descriptor-set (hedron.create-descriptor-set-layout descriptor-bindings)]
+  (memory.free descriptor-bindings.data)
+  descriptor-set)
+
+(def create-descriptor-pool proc [(number-elements U64)] seq
+  [let! elts (narrow number-elements U32)]
+  [let! pool-sizes list.list
+          (struct hedron.DescriptorPoolSize [.type :combined-image-sampler] [.descriptor-count elts])]
+  [let! pool
+          (hedron.create-descriptor-pool
+            pool-sizes
+            elts)]
+  (memory.free pool-sizes.data)
+  pool)
+
+(def create-descriptor-sets proc [(layouts (list.List hedron.DescriptorSetLayout))
+                                  (atlas FontAtlas)
+                                  (pool hedron.DescriptorPool)
+                                  (num-elements U64)] seq
+  [let! descriptor-sets (hedron.alloc-descriptor-sets (narrow num-elements U32) (list.elt 0 layouts) pool)]
+
+  (loop [for i from 0 upto descriptor-sets.len]
+    (seq
+      [let! copiers (list.list)]
+      [let! writers (list.list (struct hedron.DescriptorWrite
+        [.info :image-info (struct
+           [.sampler atlas.sampler]
+           [.image-view atlas.image-view]
+           [.image-layout :shader-read-optimal])]
+        [.descriptor-type :combined-image-sampler]
+        [.descriptor-set (list.elt i descriptor-sets)]))]
+      (hedron.update-descriptor-sets writers copiers)
+      (memory.free copiers.data)
+      (memory.free writers.data)))
+
+  descriptor-sets)
 
 ;; -------------------------------------------------------------------
 ;;
@@ -111,10 +180,25 @@
 ;; 
 ;; -------------------------------------------------------------------
 
+(def Vec2 Struct [.x F32] [.y F32])
+(def Vec3 Struct [.x F32] [.y F32] [.z F32])
+(def Vertex Struct
+  [.pos    Vec2]
+  [.colour Vec3]
+  [.texture-coord Vec2])
+
+(def DrawData Struct
+  [.num-indices U32]
+  [.index-buffer hedron.Buffer]
+  [.vertex-buffer hedron.Buffer]
+  [.pipeline hedron.Pipeline])
+
 (def fdesc proc [enm] match enm [:float-1 "float-1"] [:float-2 "float-2"] [:float-3 "float-3"])
 
-(ann create-graphics-pipeline Proc [hedron.Surface] hedron.Pipeline)
-(def create-graphics-pipeline proc [surface] seq
+
+
+(ann create-graphics-pipeline Proc [hedron.Surface (list.List hedron.DescriptorSetLayout)] hedron.Pipeline)
+(def create-graphics-pipeline proc [surface layouts] seq
   [let! ;; shaders 
         shaders list.list (load-shader "build/vert.spv") (load-shader "build/frag.spv")]
 
@@ -134,9 +218,12 @@
             [.binding 0]
             [.location 1]
             [.format :float-3]
-            [.offset narrow (offset-of colour Vertex) U32])]
-
-  [let! layouts (list.list)]
+            [.offset narrow (offset-of colour Vertex) U32])
+            (struct hedron.AttributeDescription
+            [.binding 0]
+            [.location 2]
+            [.format :float-2]
+            [.offset narrow (offset-of texture-coord Vertex) U32])]
 
   [let! pipeline
     hedron.create-pipeline
@@ -150,23 +237,23 @@
   (list.free-list vertex-binding-descriptions)
   (list.free-list vertex-attribute-descriptions)
   (list.free-list shaders)
-  (list.free-list layouts)
   pipeline)
 
-(ann record-command Proc [hedron.CommandBuffer DrawData hedron.Surface U32] Unit)
-(def record-command proc [command-buffer dd surface next-image] seq
+(ann record-command Proc [hedron.CommandBuffer DrawData hedron.DescriptorSet hedron.Surface U32] Unit)
+(def record-command proc [command-buffer dd descriptor-set surface next-image] seq
   (hedron.command-begin command-buffer :none)
   (hedron.command-begin-renderpass command-buffer surface next-image)
   (hedron.command-bind-pipeline command-buffer dd.pipeline)
   (hedron.command-set-surface command-buffer surface)
   (hedron.command-bind-vertex-buffer command-buffer dd.vertex-buffer)
   (hedron.command-bind-index-buffer command-buffer dd.index-buffer :u16)
+  (hedron.command-bind-descriptor-set command-buffer dd.pipeline descriptor-set)
   (hedron.command-draw-indexed command-buffer dd.num-indices 1 0 0 0)
   (hedron.command-end-renderpass command-buffer)
   (hedron.command-end command-buffer))
 
-(ann draw-frame Proc [SyncAcquire (list.List SyncSubmit) DrawData hedron.Surface (Maybe (Pair U32 U32))] Unit)
-(def draw-frame proc [acquire submit draw-data surface (resize (Maybe (Pair U32 U32)))] seq
+(ann draw-frame Proc [SyncAcquire (list.List SyncSubmit) DrawData hedron.DescriptorSet hedron.Surface (Maybe (Pair U32 U32))] Unit)
+(def draw-frame proc [acquire submit draw-data descriptor-set surface (resize (Maybe (Pair U32 U32)))] seq
   (hedron.wait-for-fence acquire.in-flight)
 
   (match resize
@@ -183,7 +270,7 @@
           (hedron.reset-command-buffer acquire.command-buffer)
             
           ;; The actual drawing
-          (record-command acquire.command-buffer draw-data surface next-image)
+          (record-command acquire.command-buffer draw-data descriptor-set surface next-image)
             
           (bind [memory.current-allocator (use memory.temp-allocator)]
             (hedron.queue-submit
@@ -210,23 +297,35 @@
   [let! win window.create-window "My Window" 1080 720]
   [let! surface hedron.create-window-surface win]
 
-  [let! pipeline create-graphics-pipeline surface]
+  [let! dset-layouts (list.list (create-texture-layout))]
+  [let! pipeline (create-graphics-pipeline surface dset-layouts)]
   [let! command-pool (hedron.create-command-pool)]
   [let! acquire-objects create-acquire-objects command-pool]
   [let! num-images widen (hedron.num-swapchain-images surface) U64]
   [let! submit-objects create-sync-submit-objects num-images]
 
-  [let! font-atlas (create-font-atlas command-pool)]
+  [let! arena (allocators.make-arena (use memory.current-allocator) 16_384)]
+  [let! font-atlas
+    (bind [memory.temp-allocator (allocators.adapt-arena arena)]
+      (create-font-atlas command-pool))]
+
+  ;; descriptor set stuff
+  [let! descriptor-pool create-descriptor-pool num-images] 
+  [let! descriptor-sets create-descriptor-sets dset-layouts font-atlas descriptor-pool num-images]
 
   [let! vertices list.list
-          (struct Vertex [.pos (struct Vec2 [.x -0.5]  [.y -0.5])]
-                         [.colour (struct Vec3 [.x 1.0] [.y 0.0] [.z 0.0])])
-          (struct Vertex [.pos (struct Vec2 [.x 0.5]  [.y -0.5])]
-                         [.colour (struct Vec3 [.x 0.0] [.y 1.0] [.z 0.0])])
-          (struct Vertex [.pos (struct Vec2 [.x 0.5] [.y 0.5])]
-                         [.colour (struct Vec3 [.x 0.0] [.y 0.0] [.z 1.0])])
-          (struct Vertex [.pos (struct Vec2 [.x -0.5] [.y 0.5])]
-                         [.colour (struct Vec3 [.x 0.0] [.y 0.0] [.z 1.0])])]
+          (struct Vertex [.pos           (struct Vec2 [.x -0.5] [.y -0.5])]
+                         [.colour        (struct Vec3 [.x 1.0]  [.y 0.0] [.z 0.0])]
+                         [.texture-coord (struct Vec2 [.x 0.0]  [.y 0.0])])
+          (struct Vertex [.pos           (struct Vec2 [.x 0.5]  [.y -0.5])]
+                         [.colour        (struct Vec3 [.x 0.0]  [.y 1.0] [.z 0.0])]
+                         [.texture-coord (struct Vec2 [.x 1.0]  [.y 0.0])])
+          (struct Vertex [.pos           (struct Vec2 [.x 0.5]  [.y 0.5])]
+                         [.colour        (struct Vec3 [.x 0.0]  [.y 0.0] [.z 1.0])]
+                         [.texture-coord (struct Vec2 [.x 1.0]  [.y 1.0])])
+          (struct Vertex [.pos           (struct Vec2 [.x -0.5] [.y 0.5])]
+                         [.colour        (struct Vec3 [.x 0.0]  [.y 0.0] [.z 1.0])]
+                         [.texture-coord (struct Vec2 [.x 0.0]  [.y 1.0])])]
 
   [let! indices is (list.list 0 1 2 2 3 0) (list.List U16)]
    
@@ -245,7 +344,6 @@
   (hedron.set-buffer-data index-buffer indices.data)
   (list.free-list indices)
 
-  [let! arena (allocators.make-arena (use memory.current-allocator) 16384)]
   (bind [memory.temp-allocator (allocators.adapt-arena arena)]
     (loop [while (bool.not (window.should-close win))]
           [for fence-frame = 0 then (u64.mod (u64.+ fence-frame 1) 2)]
@@ -255,7 +353,7 @@
         [let! winsize new-winsize events]
         (allocators.reset-arena arena)
     
-        (draw-frame (list.elt fence-frame acquire-objects) submit-objects draw-data surface winsize)
+        (draw-frame (list.elt fence-frame acquire-objects) submit-objects draw-data (list.elt 0 descriptor-sets) surface winsize)
         (list.free-list events))))
   (allocators.destroy-arena arena)
   
@@ -267,7 +365,14 @@
   (list.each destroy-sync-submit submit-objects)
   (list.free-list submit-objects)
 
-  (hedron.destroy-image font-atlas)
+  (list.each hedron.destroy-descriptor-set-layout dset-layouts)
+  (list.free-list dset-layouts)
+
+  (list.free-list descriptor-sets)
+
+  (hedron.destroy-descriptor-pool descriptor-pool)
+
+  (destroy-font-atlas font-atlas)
   (hedron.destroy-buffer vertex-buffer)
   (hedron.destroy-buffer index-buffer)
   (hedron.destroy-command-pool command-pool)

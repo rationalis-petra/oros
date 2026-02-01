@@ -18,5 +18,5 @@ shaders: frag.spv vert.spv
 .PHONY: run
 
 run: shaders
-	pico atlas run oros
+	relic atlas run oros
 
