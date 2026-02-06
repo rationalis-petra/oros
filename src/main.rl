@@ -25,7 +25,9 @@
 (def CharCell Struct
   [.x U32]
   [.y U32]
-  [.index U32]) ;; TODO : investigate if can be U8? unicode?
+  [.index U32]
+  [.pad U32]
+  ) ;; TODO : investigate if can be U8? unicode?
 
 
 (def max-frame-in-flight 2)
@@ -91,7 +93,8 @@
             [.y narrow (u64./ i 10) U32]
 
             ;; a-z repeating
-            [.index narrow (u64.mod i 26) U32]]
+            [.index narrow (u64.mod i 26) U32]
+            [.pad 0]]
        (list.eset i cell instances)))
   instances)
 
@@ -375,6 +378,10 @@
     [let! instance-buffers create-uniform-buffers num-images]
     [let! index-buffer hedron.create-buffer :index (* (size-of U16) indices.len)]
     
+    (loop [for i from 0 below instance-buffers.len]
+      (hedron.set-buffer-data (list.elt i instance-buffers) instances.data))
+    (list.free-list instances)
+    
     ;; descriptor set stuff
     [let! descriptor-pool create-descriptor-pool num-images] 
     [let! descriptor-sets create-descriptor-sets dset-layouts font-atlas instance-buffers descriptor-pool num-images]
@@ -388,10 +395,6 @@
     
     (hedron.set-buffer-data vertex-buffer vertices.data)
     (list.free-list vertices)
-    
-    (loop [for i from 0 below instance-buffers.len]
-      (hedron.set-buffer-data (list.elt i instance-buffers) instances.data))
-    (list.free-list instances)
     
     (hedron.set-buffer-data index-buffer indices.data)
     (list.free-list indices)

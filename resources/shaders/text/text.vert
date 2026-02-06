@@ -11,15 +11,21 @@ struct CharData {
     uint index;
 };
 
-layout(binding = 1) uniform Characters {
+layout(std140, binding = 1) uniform Characters {
     CharData glyph_data[100];
 };
 
 void main() {
     CharData glyph = glyph_data[gl_InstanceIndex];
+    // glyph.x = gl_InstanceIndex % 10;
+    // glyph.y = gl_InstanceIndex / 10;
 
-    // Calculate position
-    gl_Position = vec4((inPosition + vec2(glyph.x, glyph.y)) * vec2(0.1, 0.1) - vec2(1.0, 1.0), 0.0, 1.0);
+    // scale position by 1/width, 1/height (cols/rows)
+    vec2 scaled_pos = inPosition * vec2(0.1, 0.1);
+    // move position so top-left is at position -1, -1
+    vec2 tl_pos = scaled_pos - vec2(0.9, 0.9);
+    // Finally, add x, y coords
+    gl_Position = vec4(tl_pos + vec2(glyph.x * 0.2, glyph.y * 0.2), 0.0, 1.0);
 
     // calculate texture
     vec2 glyph_factor = vec2(1.0 / 30.0,  1.0 / 3.0);
