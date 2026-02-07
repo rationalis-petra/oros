@@ -76,6 +76,7 @@
 (ann load-image Proc [String ImageFormat] (Result Image LoaderError))
 (def load-image proc [path format] match (filesystem.open-file path :read)
   [[:ok file] seq
+
     ;; QOI has a 14-byte header, so try load 14 bytes from the file as a new chunk
     [let! header-bytes (filesystem.read-chunk file (:some 14))]
     ;; TODO: report 'nicely'

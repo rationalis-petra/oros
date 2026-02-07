@@ -15,6 +15,11 @@
 
     (platform :all)
     (data :all)
+    (data.pointer :all)
+
+    ;; Development/testing (should be removed)
+    dev
+    debug
 
     ;; Local modules
     loaders
@@ -26,9 +31,13 @@
   [.x U32]
   [.y U32]
   [.index U32]
-  [.pad U32]
-  ) ;; TODO : investigate if can be U8? unicode?
+  [.pad U32]) ;; Note: structs are rounded up to nearest vec4! 
 
+
+(def AppState Struct
+  [.row (Ptr U32)]
+  [.col (Ptr U32)]
+  [.chars (List CharCell)])
 
 (def max-frame-in-flight 2)
 
@@ -83,17 +92,18 @@
 (ann create-char-instances Proc [] (List CharCell))
 (def create-char-instances proc [] seq
   ;; For now, fix a grid size of 10x10
-  [let! cols 10]
-  [let! rows 10]
-  [let! instances list.mk-list {CharCell} 100 100]
-  (loop [for i from 0 below 100]
+  [let! cols 20]
+  [let! rows 20]
+  [let! instances list.mk-list {CharCell} 400 400]
+  (loop [for i from 0 below 400]
     (let [cell struct CharCell
             ;; layout in row-major order.
-            [.x narrow (u64.mod i 10) U32]
-            [.y narrow (u64./ i 10) U32]
+            [.x narrow (u64.mod i 20) U32]
+            [.y narrow (u64./ i 20) U32]
 
             ;; a-z repeating
-            [.index narrow (u64.mod i 26) U32]
+            ;[.index narrow (u64.mod i 27) U32]
+            [.index 27]
             [.pad 0]]
        (list.eset i cell instances)))
   instances)
@@ -101,7 +111,7 @@
 (def create-uniform-buffers proc [(number-elements U64)] seq
   [let! uniform-buffers (list.mk-list number-elements number-elements)]
   (loop [for i from 0 below number-elements]
-    (list.eset i (hedron.create-buffer :uniform (u64.* 100 (size-of CharCell))) uniform-buffers))
+    (list.eset i (hedron.create-buffer :uniform (u64.* 400 (size-of CharCell))) uniform-buffers))
   uniform-buffers)
 
 (ann create-font-atlas Proc [hedron.CommandPool] FontAtlas)
@@ -220,7 +230,7 @@
               (struct
                 [.buffer (list.elt i instances)]
                 [.offset 0]
-                [.range (u32.* 100 (narrow (size-of CharCell) U32))]))]))]
+                [.range (u32.* 400 (narrow (size-of CharCell) U32))]))]))]
 
       (hedron.update-descriptor-sets writers copiers))))
 
@@ -296,8 +306,7 @@
   (hedron.command-bind-vertex-buffer command-buffer dd.vertex-buffer)
   (hedron.command-bind-index-buffer command-buffer dd.index-buffer :u16)
   (hedron.command-bind-descriptor-set command-buffer dd.pipeline descriptor-set)
-  ;; TODO: 1 -> 100
-  (hedron.command-draw-indexed command-buffer dd.num-indices 100 0 0 0)
+  (hedron.command-draw-indexed command-buffer dd.num-indices 400 0 0 0)
   (hedron.command-end-renderpass command-buffer)
   (hedron.command-end command-buffer))
 
@@ -338,7 +347,60 @@
       (Maybe (Pair U32 U32)):none
       (match (list.elt (u64.- messages.len 1) messages)
         [[:resize x y]
-            (Maybe (Pair U32 U32)):some (struct (Pair U32 U32) [._1 x] [._2 y])])))
+          ((Maybe (Pair U32 U32)):some (struct (Pair U32 U32) [._1 x] [._2 y]))]
+            ;; TODO: add '_' pattern
+        [[:key-event a b c]
+          (Maybe (Pair U32 U32)):none])))
+
+(ann key-translate Proc [window.Key] U32)
+(def key-translate proc [key] 
+  (match key
+    [:A 0]
+    [:B 1]
+    [:C 2]
+    [:D 3]
+    [:E 4]
+    [:F 5]
+    [:G 6]
+    [:H 7]
+    [:I 8]
+    [:J 9]
+    [:K 10]
+    [:L 11]
+    [:M 12]
+    [:N 13]
+    [:O 14]
+    [:P 15]
+    [:Q 16]
+    [:R 17]
+    [:S 18]
+    [:T 19]
+    [:U 20]
+    [:V 21]
+    [:W 22]
+    [:X 23]
+    [:Y 24]
+    [:Z 25]
+    [:space 26]))
+
+(ann process-events Proc [(list.List window.Message) AppState] Unit)
+(def process-events proc [messages app] loop
+  ;; TODO (Compiler bug)
+  ;; remove the (data.pointer :all) from the import list, and replace get/set
+  ;; with pointer.get/pointer.set, and will segfault!
+
+  [for i from 0 below messages.len]
+    (match (list.elt i messages)
+      [[:resize x y] :unit]
+      [[:key-event key u pressed] (when pressed
+        (seq
+          [let! x (get app.col)]
+          [let! y (get app.row)]
+          [let! idx (widen (+ (* y 20) x) U64)]
+          (list.eset idx (struct CharCell [.x x] [.y y] [.index (key-translate key)] [.pad 0]) app.chars)
+          (if (u32.= x 19)
+            (seq (set app.col 0) (set app.row (+ 1 y)))
+            (set app.col (+ 1 x)))))]))
 
 (ann main Proc [] Unit)
 (def main proc [] seq
@@ -371,6 +433,7 @@
                            [.texture-coord (struct Vec2 [.x 0.0]  [.y 1.0])])]
     
     [let! instances (create-char-instances)]
+    [let! app struct AppState [.row (new 0)] [.col (new 0)] [.chars instances]]
     
     [let! indices is (list.list 0 1 2 2 3 0) (list.List U16)]
      
@@ -380,7 +443,6 @@
     
     (loop [for i from 0 below instance-buffers.len]
       (hedron.set-buffer-data (list.elt i instance-buffers) instances.data))
-    (list.free-list instances)
     
     ;; descriptor set stuff
     [let! descriptor-pool create-descriptor-pool num-images] 
@@ -406,12 +468,18 @@
         (thread.sleep-for (name thread.Seconds 0.03))
         [let! events window.poll-events win]
         [let! winsize new-winsize events]
+        (process-events events app)
+        (hedron.set-buffer-data (list.elt fence-frame instance-buffers) instances.data)
         (allocators.reset-arena arena)
     
         (draw-frame (list.elt fence-frame acquire-objects) submit-objects draw-data (list.elt 0 descriptor-sets) surface winsize)
         (list.free-list events)))
     (allocators.destroy-arena arena)
     
+
+    ;; delete app
+    (delete app.row) (delete app.col) (list.free-list instances)
+
     (hedron.wait-for-device)
     
     (list.each destroy-sync-acquire acquire-objects)
