@@ -17,8 +17,6 @@ layout(std140, binding = 1) uniform Characters {
 
 void main() {
     CharData glyph = glyph_data[gl_InstanceIndex];
-    // glyph.x = gl_InstanceIndex % 20;
-    // glyph.y = gl_InstanceIndex / 20;
 
     // scale position by 1/width, 1/height (cols/rows)
     vec2 scaled_pos = inPosition * vec2(0.05, 0.05);

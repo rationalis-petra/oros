@@ -1,0 +1,5 @@
+(library 
+  (name render)
+  (file "render")
+  (submodules)
+  (dependencies loaders))
