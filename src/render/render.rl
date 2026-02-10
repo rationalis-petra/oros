@@ -465,6 +465,20 @@
                                 ;; TODO: if ';' is next to ']', triggers error!
 (def char-translate proc [char] ;; (list.elt (widen char U64) ascii-table))
   cond 
+
+    [(u8.= 44 char)  72]
+
+    [(u8.= 48 char)  60]
+    [(u8.= 49 char)  61]
+    [(u8.= 50 char)  62]
+    [(u8.= 51 char)  63]
+    [(u8.= 52 char)  64]
+    [(u8.= 53 char)  65]
+    [(u8.= 54 char)  66]
+    [(u8.= 55 char)  67]
+    [(u8.= 56 char)  68]
+    [(u8.= 57 char)  69]
+
     [(u8.=  97 char)  0]
     [(u8.=  98 char)  1]
     [(u8.=  99 char)  2]
@@ -493,21 +507,21 @@
     [(u8.= 122 char) 25]
     [:true 27])
 
-(ann set-char-instances Proc [String (List CharCell)] Unit)
+(ann set-char-instances Proc [(List (List U8)) (List CharCell)] Unit)
 (def set-char-instances proc [text instances] seq
   ;; For now, fix a grid size of 10x10
   [let! cols 20]
   [let! rows 20]
   (loop [for i from 0 below 400]
-    (let [cell struct CharCell
+     
+    (let [inner-list (list.elt (u64./ i 20) text)]
+         [cell struct CharCell
             ;; layout in row-major order.
             [.x narrow (u64.mod i 20) U32]
             [.y narrow (u64./ i 20) U32]
 
             ;; translate text if there's more string...
-            [.index (if (u64.< i text.memsize)
-                        (char-translate (string.nth-byte i text))
-                        27)]
+            [.index (char-translate (list.elt (u64.mod i 20) inner-list))]
             [.pad 0]]
        (list.eset i cell instances))))
 
@@ -524,7 +538,7 @@
       (terminal.write-string (to-string cell.index))
       (terminal.write-string "\n"))))
 
-(ann draw-text Proc [String U64 (Maybe (Pair U32 U32)) Renderer] Unit)
+(ann draw-text Proc [(List (List U8)) U64 (Maybe (Pair U32 U32)) Renderer] Unit)
 (def draw-text proc [text fence-frame winsize state] 
   (bind [memory.current-allocator (use memory.temp-allocator)] seq
     (set-char-instances text state.instances)

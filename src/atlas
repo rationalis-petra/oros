@@ -4,4 +4,4 @@
   (file "main")
   (entry-point main)
 
-  (dependencies ui loaders render))
+  (dependencies ui render loaders))
