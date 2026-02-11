@@ -148,6 +148,9 @@
       [[:resize x y] :unit]
       [[:key-event key u pressed] when pressed
           (match key
+            [:enter seq
+              (set app.y (+ (get app.y) 1))
+              (set app.x 0)]
             [:backspace seq
               (set app.x (- (get app.x) 1))
               [let! inner-list (list.elt (get app.y) (get app.text))]

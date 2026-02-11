@@ -291,7 +291,6 @@
   (hedron.command-bind-index-buffer command-buffer dd.index-buffer :u16)
   (hedron.command-bind-descriptor-set command-buffer dd.pipeline descriptor-set)
 
-  ;; TODO: set breakpoint here, first-instance = 8?? 
   (hedron.command-draw-indexed command-buffer dd.num-indices 400 0 0 0)
   (hedron.command-end-renderpass command-buffer)
   (hedron.command-end command-buffer))
@@ -462,12 +461,14 @@
 ;;   ;)
 
 (ann char-translate Proc [U8] U32)
-                                ;; TODO: if ';' is next to ']', triggers error!
 (def char-translate proc [char] ;; (list.elt (widen char U64) ascii-table))
   cond 
 
-    [(u8.= 44 char)  72]
+    [(u8.= 44 char)  72] ;; .
+    [(u8.= 45 char)  87] ;; -
+    [(u8.= 46 char)  70] ;; .
 
+    ;; numbers 0-0
     [(u8.= 48 char)  60]
     [(u8.= 49 char)  61]
     [(u8.= 50 char)  62]
@@ -478,6 +479,8 @@
     [(u8.= 55 char)  67]
     [(u8.= 56 char)  68]
     [(u8.= 57 char)  69]
+
+    [(u8.= 59 char)  73] ;; semicolon
 
     [(u8.=  97 char)  0]
     [(u8.=  98 char)  1]
