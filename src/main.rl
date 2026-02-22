@@ -1,3 +1,4 @@
+
 ;; ---------------------------------------------------
 ;; 
 ;;          Oros.
@@ -21,6 +22,12 @@
 
    (export main))
 
+(ann resize (Dynamic (Maybe (Pair U32 U32))))
+(def resize dynamic :none)
+
+(ann keystate (Dynamic (Maybe window.KeyState)))
+(def keystate dynamic :none)
+
 (def AppState Struct
   [.x (Ptr U64)]
   [.y (Ptr U64)]
@@ -40,9 +47,6 @@
     [.y (new 0)]
     [.text text]))
 
-;; TODO: If adding a second annotation, which is different, seems to cause
-;;       memory leak in language?
-;; (ann create-app Proc [AppState] Unit)
 
 (ann destroy-app Proc [AppState] Unit)
 (def destroy-app proc [(app AppState)] seq
@@ -88,6 +92,33 @@
     [:y 121] 
     [:z 122] 
 
+    [:A 65]
+    [:B 66]
+    [:C 67]
+    [:D 68]
+    [:E 69]
+    [:F 70]
+    [:G 71]
+    [:H 72] 
+    [:I 73] 
+    [:J 74] 
+    [:K 75] 
+    [:L 76] 
+    [:M 77] 
+    [:N 78] 
+    [:O 79] 
+    [:P 80] 
+    [:Q 81] 
+    [:R 82] 
+    [:S 83] 
+    [:T 84] 
+    [:U 85] 
+    [:V 86] 
+    [:W 87] 
+    [:X 88] 
+    [:Y 89] 
+    [:Z 90] 
+         
     [:one   49]
     [:two   50]
     [:three 51]
@@ -109,7 +140,7 @@
     [:asterisk    42]
     [:lparen      40] 
     [:rparen      41]
-    [:minus       35]
+    [:minus       55]
     [:plus        43]
 
     [:lbrace    91]
@@ -126,43 +157,41 @@
     [_ 0])
 
 
-
-(ann new-winsize Proc [(list.List window.Message)] (Maybe (Pair U32 U32)))
-(def new-winsize proc [messages] seq
-  (if (u64.= 0 messages.len)
-      (Maybe (Pair U32 U32)):none
-      (match (list.elt (u64.- messages.len 1) messages)
-        [[:resize x y]
-          ((Maybe (Pair U32 U32)):some (struct (Pair U32 U32) [._1 x] [._2 y]))]
-            ;; TODO: add '_' pattern
-        [[:key-event a b c]
-          (Maybe (Pair U32 U32)):none])))
-
-
-
-
 (ann process-events Proc [(list.List window.Message) AppState] Unit)
 (def process-events proc [messages (app AppState)] loop
   [for i from 0 below messages.len]
     (match (list.elt i messages)
-      [[:resize x y] :unit]
-      [[:key-event key u pressed] when pressed
-          (match key
-            [:enter seq
-              (set app.y (+ (get app.y) 1))
-              (set app.x 0)]
-            [:backspace seq
-              (set app.x (- (get app.x) 1))
-              [let! inner-list (list.elt (get app.y) (get app.text))]
-              (list.eset (get app.x) (key-to-ascii :space) inner-list)]
-            [_ seq
-              [let! x (get app.x)]
-              [let! y (get app.y)]
-              [let! inner-list (list.elt y (get app.text))]
-              (list.eset x (key-to-ascii key) inner-list)
-              (if (u64.= x 19)
-                (seq (set app.x 0) (set app.y (+ 1 y)))
-                (set app.x (+ 1 x)))])]))
+      [[:resize x y]
+        (modify resize (:some (struct (Pair U32 U32) [._1 x] [._2 y])))]
+
+      [[:modifier-key-event pressed latched locked group] seq
+        (match (use keystate)
+          [[:some ks] (window.update-keystate-modifier pressed latched locked group ks)]
+          [:none :unit])]
+      [[:key-event key u pressed] match (use keystate)
+        [[:some ks] seq
+          (window.update-keystate key u pressed ks)
+          [let! processed (window.get-key key ks)]
+          (when pressed
+            (match processed
+              [:enter seq
+                (set app.y (+ (get app.y) 1))
+                (set app.x 0)]
+              [:backspace seq
+                (set app.x (- (get app.x) 1))
+                [let! inner-list (list.elt (get app.y) (get app.text))]
+                (list.eset (get app.x) (key-to-ascii :space) inner-list)]
+              [_ seq
+                [let! x (get app.x)]
+                [let! y (get app.y)]
+                [let! inner-list (list.elt y (get app.text))]
+                (list.eset x (key-to-ascii processed) inner-list)
+                (if (u64.= x 19)
+                  (seq (set app.x 0) (set app.y (+ 1 y)))
+                  (set app.x (+ 1 x)))]))]
+        [:none :unit]]
+      [[:keymap keymap]
+        (modify keystate (:some (window.create-keystate keymap)))]))
 
 
 (ann main Proc [] Unit)
@@ -178,15 +207,22 @@
           [for fence-frame = 0 then (u64.mod (u64.+ fence-frame 1) 2)]
     
       (seq 
-        (thread.sleep-for (name thread.Seconds 0.03))
-        [let! events window.poll-events win]
-        [let! winsize new-winsize events]
-        (process-events events app)
-        (hedron.set-buffer-data (list.elt fence-frame renderer.instance-buffers) renderer.instances.data)
+        ;; Prepeare 
         (allocators.reset-arena arena)
+        (modify resize :none)
+        (thread.sleep-for (name thread.Seconds 0.03))
+
+        ;; Process input 
+        [let! events window.poll-events win]
+        (process-events events app)
+        (list.free-list events)
     
-        (draw-text (get app.text) fence-frame winsize renderer)
-        (list.free-list events))))
+        ;; Render
+        (draw-text (get app.text) fence-frame (use resize) renderer))))
+
+  (match (use keystate)
+    [[:some s] (window.destroy-keystate s)]
+    [[:none] :unit])
 
   (destroy-app app)
   (allocators.destroy-arena arena)

@@ -332,7 +332,7 @@
 ;;
 ;; -----------------------------------------------------------------------------
 
-(def Renderer Struct
+(def Renderer Opaque Struct
   [.surface hedron.Surface]
   [.dset-layouts List hedron.DescriptorSetLayout]
   [.pipeline hedron.Pipeline]
@@ -404,7 +404,7 @@
       (hedron.set-buffer-data index-buffer indices.data)
       (list.free-list indices)
 
-      (struct Renderer
+      (struct Renderer 
         [.surface surface]
         [.dset-layouts dset-layouts]
         [.pipeline pipeline]
@@ -464,7 +464,10 @@
 (def char-translate proc [char] ;; (list.elt (widen char U64) ascii-table))
   cond 
 
-    [(u8.= 44 char)  72] ;; .
+    [(u8.= 33 char)  76] ;; !
+    [(u8.= 40 char)  74] ;; (
+    [(u8.= 41 char)  80] ;; )
+    [(u8.= 44 char)  72] ;; ,
     [(u8.= 45 char)  87] ;; -
     [(u8.= 46 char)  70] ;; .
 
@@ -481,7 +484,37 @@
     [(u8.= 57 char)  69]
 
     [(u8.= 59 char)  73] ;; semicolon
+    [(u8.= 63 char)  75] ;; ?
 
+    ;; Capitals
+    [(u8.= 65 char) 30]
+    [(u8.= 66 char) 31]
+    [(u8.= 67 char) 32]
+    [(u8.= 68 char) 33]
+    [(u8.= 69 char) 34]
+    [(u8.= 70 char) 35]
+    [(u8.= 71 char) 36]
+    [(u8.= 72 char) 37]
+    [(u8.= 73 char) 38]
+    [(u8.= 74 char) 39]
+    [(u8.= 75 char) 40]
+    [(u8.= 76 char) 41]
+    [(u8.= 77 char) 42]
+    [(u8.= 78 char) 43]
+    [(u8.= 79 char) 44]
+    [(u8.= 80 char) 45]
+    [(u8.= 81 char) 46]
+    [(u8.= 82 char) 47]
+    [(u8.= 83 char) 48]
+    [(u8.= 84 char) 49]
+    [(u8.= 85 char) 50]
+    [(u8.= 86 char) 51]
+    [(u8.= 87 char) 52]
+    [(u8.= 88 char) 53]
+    [(u8.= 89 char) 54]
+    [(u8.= 90 char) 55]
+
+    ;; lowercase
     [(u8.=  97 char)  0]
     [(u8.=  98 char)  1]
     [(u8.=  99 char)  2]
