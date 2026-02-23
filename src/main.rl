@@ -25,9 +25,6 @@
 (ann resize (Dynamic (Maybe (Pair U32 U32))))
 (def resize dynamic :none)
 
-(ann keystate (Dynamic (Maybe window.KeyState)))
-(def keystate dynamic :none)
-
 (def AppState Struct
   [.x (Ptr U64)]
   [.y (Ptr U64)]
@@ -157,18 +154,18 @@
     [_ 0])
 
 
-(ann process-events Proc [(list.List window.Message) AppState] Unit)
-(def process-events proc [messages (app AppState)] loop
+(ann process-events Proc [(list.List window.Message) (Ptr (Maybe window.KeyState)) AppState] Unit)
+(def process-events proc [messages keystate (app AppState)] loop
   [for i from 0 below messages.len]
     (match (list.elt i messages)
       [[:resize x y]
         (modify resize (:some (struct (Pair U32 U32) [._1 x] [._2 y])))]
 
       [[:modifier-key-event pressed latched locked group] seq
-        (match (use keystate)
+        (match (get keystate)
           [[:some ks] (window.update-keystate-modifier pressed latched locked group ks)]
           [:none :unit])]
-      [[:key-event key u pressed] match (use keystate)
+      [[:key-event key u pressed] match (get keystate)
         [[:some ks] seq
           (window.update-keystate key u pressed ks)
           [let! processed (window.get-key key ks)]
@@ -191,7 +188,7 @@
                   (set app.x (+ 1 x)))]))]
         [:none :unit]]
       [[:keymap keymap]
-        (modify keystate (:some (window.create-keystate keymap)))]))
+        (set keystate (:some (window.create-keystate keymap)))]))
 
 
 (ann main Proc [] Unit)
@@ -201,6 +198,7 @@
 
   [let! arena (allocators.make-arena (use memory.current-allocator) 16_384)]
   [let! app (create-app)]
+  [let! keystate (local :none)]
   (bind [memory.temp-allocator (allocators.adapt-arena arena)] seq
     
     (loop [while (bool.not (window.should-close win))]
@@ -214,13 +212,13 @@
 
         ;; Process input 
         [let! events window.poll-events win]
-        (process-events events app)
+        (process-events events keystate app)
         (list.free-list events)
     
         ;; Render
         (draw-text (get app.text) fence-frame (use resize) renderer))))
 
-  (match (use keystate)
+  (match (get keystate)
     [[:some s] (window.destroy-keystate s)]
     [[:none] :unit])
 
