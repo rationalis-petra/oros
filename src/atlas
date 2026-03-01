@@ -4,4 +4,4 @@
   (file "main")
   (entry-point main)
 
-  (dependencies render loaders))
+  (dependencies render loaders tbuf))

@@ -1,4 +1,3 @@
-
 ;; ---------------------------------------------------
 ;; 
 ;;          Oros.
@@ -208,7 +207,7 @@
         ;; Prepeare 
         (allocators.reset-arena arena)
         (modify resize :none)
-        (thread.sleep-for (name thread.Seconds 0.03))
+        (thread.sleep-for (name Seconds 0.03))
 
         ;; Process input 
         [let! events window.poll-events win]
