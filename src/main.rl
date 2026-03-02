@@ -170,6 +170,7 @@
           [let! processed (window.get-key key ks)]
           (when pressed
             (match processed
+              [:shift :unit]
               [:enter seq
                 (set app.y (+ (get app.y) 1))
                 (set app.x 0)]
