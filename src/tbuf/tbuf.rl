@@ -49,23 +49,23 @@
     [.gap-end    U64]
     [.bytes (Ptr (List U8))])
 
-(def TextBuffer Opaque Named TextBuffer Ptr TextBufferData)
+(def TextBuffer Opaque TextBuffer Ptr TextBufferData)
 
 (ann make-textbuffer Proc [Allocator] TextBuffer)
 (def make-textbuffer proc [alloc] seq
   (bind [memory.current-allocator alloc]
-    (into TextBuffer (name TextBuffer
+    (into TextBuffer
       (new (struct TextBufferData
         [.allocator  alloc]
         [.cursor-pos 0]
         [.gap-begin  0]
         [.gap-end    0]
-        [.bytes      (new (list.mk-list 1024 1024))]))))))
+        [.bytes      (new (list.mk-list 1024 1024))])))))
 
 (ann insert-char Proc [U32 TextBuffer] Unit)
 (def insert-char proc [codepoint bptr] seq
   ;; Step 1: check gap size
-  [let! buffer (get (unname (out-of TextBuffer bptr)))]
+  [let! buffer (get (out-of TextBuffer bptr))]
   [let! gap-size (- buffer.gap-end buffer.gap-begin)]
   (if (u64.> gap-size 4)
     :unit

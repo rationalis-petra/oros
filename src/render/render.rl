@@ -332,7 +332,7 @@
 ;;
 ;; -----------------------------------------------------------------------------
 
-(def Renderer Opaque Struct
+(def Renderer Opaque Renderer Struct
   [.surface hedron.Surface]
   [.dset-layouts List hedron.DescriptorSetLayout]
   [.pipeline hedron.Pipeline]
