@@ -16,8 +16,8 @@
     (data.list   :only (List))
     (data.string :only (String))
 
-    (abs.numeric :all)
-    (abs.order :all)
+    (abs.numeric  :all)
+    (abs.equality :all)
     (abs.show :all))
 
   (export
@@ -51,18 +51,23 @@
   [:file-error filesystem.FileError])
 
 (def QoiHeader Struct packed
-  ;; TODO: add support for inline arrays, then change this to
-  ;; .mag [Array 8 U8] (different type for static vs dynamic?)
-  [.mag1 U8]
-  [.mag2 U8]
-  [.mag3 U8]
-  [.mag4 U8]
-
+  [.magic (Array 4 U8)]
   [.width  U32]
   [.height U32]
   [.channels     U8]
   [.colour-space U8])
 
+(def eq-arr4 instance [A] {(eq (Eq A))} (Eq (Array [4] A))
+  [.= proc [l r]
+    (->    (eq.= (aelt 0 l) (aelt 0 r))
+      (and (eq.= (aelt 1 l) (aelt 1 r)))
+      (and (eq.= (aelt 2 l) (aelt 2 r)))
+      (and (eq.= (aelt 3 l) (aelt 3 r))))]
+  [.!= proc [l r]
+    (->    (eq.!= (aelt 0 l) (aelt 0 r))
+      (or  (eq.!= (aelt 1 l) (aelt 1 r)))
+      (or  (eq.!= (aelt 2 l) (aelt 2 r)))
+      (or  (eq.!= (aelt 3 l) (aelt 3 r))))])
 
 (ann rgb Proc [U8 U8 U8] Pixel)
 (def rgb proc [r b g] (struct Pixel [.r r] [.g g] [.b b] [.a 255]))
@@ -83,10 +88,7 @@
     (when (!= header-bytes.len 14) (panic "Unable to load qoi header!"))
     [let! qoi-header (load {QoiHeader} header-bytes.data)]
     (list.free-list header-bytes)
-    (when (not (-> (= qoi-header.mag1 (narrow #q U8))
-                 (and (= qoi-header.mag2 (narrow #o U8)))
-                 (and (= qoi-header.mag3 (narrow #i U8)))
-                 (and (= qoi-header.mag4 (narrow #f U8)))))
+    (when (not (= qoi-header.magic (array [#q #o #i #f])))
       (panic "QOI header lacks magic bytes 'qoif'"))
 
     [let! raw-pixel-data (filesystem.read-chunk file :none)]
