@@ -10,7 +10,7 @@
     (data :all))
 
   (export
-    TextBuffer))
+    Vec2))
 
 
 (def Vec2 Family [A] Struct [.x A] [.y A])
