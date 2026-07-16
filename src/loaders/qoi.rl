@@ -96,7 +96,7 @@
     [let! width (u32.byte-swap qoi-header.width)]
     [let! height (u32.byte-swap qoi-header.height)]
 
-    [let! num-pixels (widen (* width height) U64)]
+    [let! num-pixels (widen U64 (* width height))]
 
     [let! pixels (list.mk-list {Pixel} num-pixels num-pixels)]
 
@@ -143,7 +143,7 @@
           [(= (u8.shr 6 tag) #b_00) seq
             ;; We know the lower 6 bits are an index into the running array, AND
             ;; that the upper 2 bits are 0, so can just use the value!
-            [let! new-pixel (list.elt (widen tag U64) running)]
+            [let! new-pixel (list.elt (widen U64 tag) running)]
             (list.eset i new-pixel pixels)
             (set prev-pixel new-pixel)
             (set src-pos (+ loc 1))]
@@ -186,7 +186,7 @@
 
         ;; index_position = (r * 3 + g * 5 + b * 7 + a * 11) % 64
         [let! index-pos (u8.mod (u8.+ (u8.* 3 pxl.r) (u8.+ (u8.* 5 pxl.g) (u8.+ (u8.* 7 pxl.b) (u8.* 11 pxl.a)))) 64)]
-        (list.eset (u64.mod (widen index-pos U64) 64) pxl running)))
+        (list.eset (u64.mod (widen U64 index-pos) 64) pxl running)))
 
     (terminal.write-string "\n")
     (delete runleft)

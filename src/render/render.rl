@@ -69,10 +69,10 @@
   (loop [for i from 0 below 400]
     (let [cell struct CharCell
             ;; layout in row-major order.
-            [.x narrow (u64.mod i 20) U32]
-            [.y narrow (u64./ i 20) U32]
+            [.x narrow U32 (u64.mod i 20)]
+            [.y narrow U32 (u64./ i 20)]
             ;[.index 30]
-            [.index narrow (u64.mod i 27) U32]
+            [.index narrow U32 (u64.mod i 27)]
             [.pad 0]]
        (list.eset i cell instances)))
   instances)
@@ -194,7 +194,7 @@
   descriptor-set-layout)
 
 (def create-descriptor-pool proc [(number-elements U64)] seq
-  [let! elts (narrow number-elements U32)]
+  [let! elts (narrow U32 number-elements)]
   [let! pool-sizes list.list
           (struct hedron.DescriptorPoolSize
             [.type :combined-image-sampler]
@@ -214,7 +214,7 @@
                                   (instances (List hedron.Buffer))
                                   (pool hedron.DescriptorPool)
                                   (num-elements U64)] seq
-  [let! descriptor-sets (hedron.alloc-descriptor-sets (narrow num-elements U32) (list.elt 0 layouts) pool)]
+  [let! descriptor-sets (hedron.alloc-descriptor-sets (narrow U32 num-elements) (list.elt 0 layouts) pool)]
 
   (bind [memory.current-allocator (use memory.temp-allocator)]
   (loop [for i from 0 upto descriptor-sets.len]
@@ -238,7 +238,7 @@
               (struct
                 [.buffer (list.elt i instances)]
                 [.offset 0]
-                [.range (u32.* 400 (narrow (size-of CharCell) U32))]))]))]
+                [.range (u32.* 400 (narrow U32 (size-of CharCell)))]))]))]
 
       (hedron.update-descriptor-sets writers copiers))))
 
@@ -252,7 +252,7 @@
   [let! vertex-binding-descriptions list.list
           (struct hedron.BindingDescription
             [.binding 0]
-            [.stride narrow (size-of Vertex) U32]
+            [.stride narrow U32 (size-of Vertex)]
             [.input-rate :vertex])]
 
   [let! vertex-attribute-descriptions list.list
@@ -260,12 +260,12 @@
             [.binding 0]
             [.location 0]
             [.format :float-2]
-            [.offset narrow (offset-of pos Vertex) U32])
+            [.offset narrow U32 (offset-of pos Vertex)])
           (struct hedron.AttributeDescription
             [.binding 0]
             [.location 1]
             [.format :float-2]
-            [.offset narrow (offset-of texture-coord Vertex) U32])]
+            [.offset narrow U32 (offset-of texture-coord Vertex)])]
 
   [let! pipeline
     hedron.create-pipeline
@@ -307,7 +307,7 @@
 
       (match imres
         [[:image next-image] seq
-          [let! syn (list.elt (widen next-image U64) submit)] ;; bug here??
+          [let! syn (list.elt (widen U64 next-image) submit)] ;; bug here??
           
           (hedron.reset-fence acquire.in-flight)
           (hedron.reset-command-buffer acquire.command-buffer)
@@ -361,7 +361,7 @@
       [let! pipeline (create-graphics-pipeline surface dset-layouts)]
       [let! command-pool (hedron.create-command-pool)]
       [let! acquire-objects create-acquire-objects command-pool]
-      [let! num-images widen (hedron.num-swapchain-images surface) U64]
+      [let! num-images widen U64 (hedron.num-swapchain-images surface)]
       [let! submit-objects create-sync-submit-objects num-images]
       
       [let! font-atlas (create-font-atlas command-pool)]
@@ -377,7 +377,7 @@
               (struct Vertex [.pos           (struct Vec2 [.x -1.0] [.y 1.0])]
                              [.texture-coord (struct Vec2 [.x 0.0]  [.y 1.0])])]
       
-      [let! indices is (list.list 0 1 2 2 3 0) (list.List U16)]
+      [let! indices is (list.List U16) (list.list 0 1 2 2 3 0)]
        
       [let! vertex-buffer hedron.create-buffer :vertex (* (size-of Vertex) vertices.len)]
       [let! instance-buffers create-uniform-buffers num-images]
@@ -392,7 +392,7 @@
       [let! descriptor-sets create-descriptor-sets dset-layouts font-atlas instance-buffers descriptor-pool num-images]
       
       [let! draw-data struct DrawData
-                         [.num-indices (narrow indices.len U32)]
+                         [.num-indices (narrow U32 indices.len)]
                          [.index-buffer index-buffer]
                          [.instance-buffers instance-buffers]
                          [.vertex-buffer vertex-buffer]
@@ -553,8 +553,8 @@
     (let [inner-list (list.elt (u64./ i 20) text)]
          [cell struct CharCell
             ;; layout in row-major order.
-            [.x narrow (u64.mod i 20) U32]
-            [.y narrow (u64./ i 20) U32]
+            [.x narrow U32 (u64.mod i 20)]
+            [.y narrow U32 (u64./ i 20)]
 
             ;; translate text if there's more string...
             [.index (char-translate (list.elt (u64.mod i 20) inner-list))]

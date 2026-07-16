@@ -101,6 +101,6 @@
     ;; }
 
 
-(ann insert-string Proc [String TextBuffer] Unit)
+;(ann insert-string Proc [String TextBuffer] Unit)
 
-(ann move Proc [TextBuffer (Vec2 U64)] Unit)
+;(ann move Proc [TextBuffer (Vec2 U64)] Unit)
